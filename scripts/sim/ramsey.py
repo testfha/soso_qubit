@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from qutip import Qobj
 
-from sim import PulseSimulator, ExchangeParams, MHz, Hz_to_rad
+from .sim import PulseSimulator, ExchangeParams, MHz, Hz_to_rad
 
 # -----------------------------
 # Helpers
@@ -44,8 +44,8 @@ theta13 = 0.0
 
 # Idle point in EXCHANGE units.
 # Replace by your actual idle J12, J23, J13 if known.
-J12_idle = 12.0 * MHz * Hz_to_rad
-J23_idle = 8.0 * MHz * Hz_to_rad
+J12_idle = 10* MHz * Hz_to_rad
+J23_idle = 0* MHz * Hz_to_rad
 J13_idle = 0.0
 
 # -----------------------------
@@ -61,7 +61,7 @@ psi_plus = plus_state(psi0L, psi1L)
 # Scan axes
 # -----------------------------
 taus = np.linspace(0.0, 2.0e-6, 201)   # 0 to 2 us
-J12_scan = np.linspace(10.0, 18.0, 81) * MHz * Hz_to_rad  # adjust range
+J12_scan = np.linspace(0.0, 18.0, 81) * MHz * Hz_to_rad  # adjust range
 
 signal = np.zeros((len(J12_scan), len(taus)))
 
@@ -82,7 +82,7 @@ plt.figure(figsize=(6, 5))
 plt.imshow(
     signal,
     extent=(taus[0] * 1e6, taus[-1] * 1e6,
-            J12_scan[-1] / (MHz * Hz_to_rad), J12_scan[0] / (MHz * Hz_to_rad)),
+            J12_scan[0] / (MHz * Hz_to_rad), J12_scan[-1] / (MHz * Hz_to_rad)),
     aspect='auto',
     cmap='Blues',
 )
