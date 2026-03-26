@@ -311,8 +311,8 @@ if __name__ == "__main__":
         46.5 * MHz * Hz_to_rad,
     ]
 
-    j12 = np.linspace(0 * MHz * Hz_to_rad, 30 * MHz * Hz_to_rad, 41)
-    j23 = np.linspace(0 * MHz * Hz_to_rad, 30 * MHz * Hz_to_rad, 41)
+    j12 = np.linspace(0 * MHz * Hz_to_rad, 30 * MHz * Hz_to_rad, 200)
+    j23 = np.linspace(0 * MHz * Hz_to_rad, 30 * MHz * Hz_to_rad, 200)
     pop = np.zeros((len(j12), len(j23)))
 
     tlist = [0, 200e-9]

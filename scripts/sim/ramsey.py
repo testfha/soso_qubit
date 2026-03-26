@@ -13,7 +13,6 @@ def normalize(psi: Qobj) -> Qobj:
 def logical_basis_from_idle(sim_idle: PulseSimulator):
     """Take the 2 logical states from the idle Hamiltonian."""
     evals, evecs = sim_idle.static_hamiltonian.eigenstates()
-    # adjust indices if your logical pair is not [1], [2]
     psi0L = normalize(evecs[1])
     psi1L = normalize(evecs[2])
     return psi0L, psi1L, evals
@@ -30,23 +29,34 @@ def ramsey_return_prob(sim: PulseSimulator, psi_init: Qobj, tau: float) -> float
 # -----------------------------
 # Device / model parameters
 # -----------------------------
-# Example Zeeman splittings from their code
-b = [
-    52.5 * MHz * Hz_to_rad,
-    74.0 * MHz * Hz_to_rad,
-    46.5 * MHz * Hz_to_rad,
-]
+b_mhz = np.array([52.5, 74.0, 46.5], dtype=float)
+g1, g2, g3 = b_mhz
 
-# Example SO angles; replace with your actual values
+b = b_mhz * MHz * Hz_to_rad
+
 theta12 = 0.0
 theta23 = 0.0
 theta13 = 0.0
 
-# Idle point in EXCHANGE units.
-# Replace by your actual idle J12, J23, J13 if known.
-J12_idle = 10* MHz * Hz_to_rad
-J23_idle = 0* MHz * Hz_to_rad
-J13_idle = 0.0
+# exact idle point from the 1q theory
+J12_idle_mhz = 2.0 * (g1 - g3) * (g2 - g3) / (g1 + g2 - 2.0 * g3)
+J23_idle_mhz = 0.0
+J13_idle_mhz = 0.0
+
+J12_idle = J12_idle_mhz * MHz * Hz_to_rad
+J23_idle = J23_idle_mhz * MHz * Hz_to_rad
+J13_idle = J13_idle_mhz * MHz * Hz_to_rad
+
+print(f"J12_idle = {J12_idle_mhz:.6f} MHz")
+
+# -----------------------------
+# 0.5% quasi-static charge noise
+# noise is applied to deviation from idle:
+# J12_noisy = J12_idle + (J12_val - J12_idle) * (1 + delta)
+# -----------------------------
+sigma_noise = 5e-3
+n_noise_avg = 50
+rng = np.random.default_rng(1234)
 
 # -----------------------------
 # Build idle simulator and logical basis
@@ -61,19 +71,29 @@ psi_plus = plus_state(psi0L, psi1L)
 # Scan axes
 # -----------------------------
 taus = np.linspace(0.0, 2.0e-6, 201)   # 0 to 2 us
-J12_scan = np.linspace(0.0, 18.0, 81) * MHz * Hz_to_rad  # adjust range
+J12_scan = np.linspace(0.0, 18.0, 81) * MHz * Hz_to_rad
 
 signal = np.zeros((len(J12_scan), len(taus)))
 
 # -----------------------------
-# Ramsey-like map
+# Ramsey-like map with 0.5% charge noise
 # -----------------------------
 for i, J12_val in enumerate(J12_scan):
-    sim = PulseSimulator(j12=J12_val, j23=J23_idle, j13=J13_idle, b=b)
-    sim.set_thetas(theta12, theta23, theta13)
+    noise_samples = rng.normal(0.0, sigma_noise, size=n_noise_avg)
 
     for j, tau in enumerate(taus):
-        signal[i, j] = ramsey_return_prob(sim, psi_plus, tau)
+        vals = []
+
+        for delta in noise_samples:
+            # noise on deviation from idle
+            J12_noisy = J12_idle + (J12_val - J12_idle) * (1.0 + delta)
+
+            sim = PulseSimulator(j12=J12_noisy, j23=J23_idle, j13=J13_idle, b=b)
+            sim.set_thetas(theta12, theta23, theta13)
+
+            vals.append(ramsey_return_prob(sim, psi_plus, tau))
+
+        signal[i, j] = np.mean(vals)
 
 # -----------------------------
 # Plot
@@ -81,14 +101,19 @@ for i, J12_val in enumerate(J12_scan):
 plt.figure(figsize=(6, 5))
 plt.imshow(
     signal,
-    extent=(taus[0] * 1e6, taus[-1] * 1e6,
-            J12_scan[0] / (MHz * Hz_to_rad), J12_scan[-1] / (MHz * Hz_to_rad)),
-    aspect='auto',
-    cmap='Blues',
+    extent=(
+        taus[0] * 1e6,
+        taus[-1] * 1e6,
+        J12_scan[0] / (MHz * Hz_to_rad),
+        J12_scan[-1] / (MHz * Hz_to_rad),
+    ),
+    origin="lower",
+    aspect="auto",
+    cmap="Blues",
 )
 plt.xlabel(r'$\tau$ [$\mu$s]')
 plt.ylabel(r'$J_{12}$ [MHz]')
-plt.title('Ramsey-like return probability')
+plt.title('Ramsey-like return probability (0.5% charge noise)')
 plt.colorbar(label='P(return to |+>)')
 plt.tight_layout()
 plt.show()
