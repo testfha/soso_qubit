@@ -6,9 +6,9 @@ from scripts.sim.sim import PulseSimulator
 from scripts.sim.units import Hz_to_rad, MHz
 
 
-# ------------------------------------------------------------
+
 # helpers
-# ------------------------------------------------------------
+
 def normalize(psi: Qobj) -> Qobj:
     return psi.unit()
 
@@ -46,9 +46,8 @@ def remove_global_phase(U: np.ndarray) -> np.ndarray:
     return U / np.exp(0.5j * np.angle(detU))
 
 
-# ------------------------------------------------------------
 # system parameters
-# ------------------------------------------------------------
+
 b_mhz = np.array([52.5, 74.0, 46.5], dtype=float)
 b = b_mhz * MHz * Hz_to_rad
 
@@ -66,9 +65,9 @@ J23_idle = J23_idle_mhz * MHz * Hz_to_rad
 J13_idle = J13_idle_mhz * MHz * Hz_to_rad
 
 tau = 200e-9  # 200 ns
-# ------------------------------------------------------------
+
 # 0.1% quasi-static charge noise
-# ------------------------------------------------------------
+
 sigma_noise = 5e-3
 n_noise_avg = 50
 rng = np.random.default_rng(1234)
@@ -78,9 +77,9 @@ Utarget_Xm90 = np.array([[1, 1j], [1j, 1]], dtype=complex) / np.sqrt(2)
 Utarget = Utarget_X90
 
 
-# ------------------------------------------------------------
+
 # idle logical basis
-# ------------------------------------------------------------
+
 sim_idle = PulseSimulator(j12=J12_idle, j23=J23_idle, j13=J13_idle, b=b)
 sim_idle.set_thetas(theta12, theta23, theta13)
 
@@ -93,9 +92,6 @@ assert np.allclose(V.conj().T @ V, np.eye(2), atol=1e-10)
 states6 = six_states()
 
 
-# ------------------------------------------------------------
-# scan grid: FINAL pulse point in (J12, J23)
-# ------------------------------------------------------------
 J12_scan_mhz = np.linspace(0.0, 20.0, 80)
 J23_scan_mhz = np.linspace(0.0, 20.0, 80)
 
@@ -103,11 +99,8 @@ fid_map = np.zeros((len(J12_scan_mhz), len(J23_scan_mhz)))
 leak_map = np.zeros((len(J12_scan_mhz), len(J23_scan_mhz)))
 
 
-# ------------------------------------------------------------
-# simulate from idle -> pulse point -> wait 200 ns
-# abrupt quench, same spirit as your old map
-# ------------------------------------------------------------
-# ------------------------------------------------------------
+
+
 # simulate from idle -> pulse point -> wait 200 ns
 # with 0.1% quasi-static charge noise
 # ------------------------------------------------------------
@@ -164,9 +157,7 @@ dJ12_th_mhz = solJ12_coeff * dJ23_th_mhz
 
 J23_th_mhz = J23_idle_mhz + dJ23_th_mhz
 J12_th_mhz = J12_idle_mhz + dJ12_th_mhz
-# ------------------------------------------------------------
-# plot infidelity map in log scale
-# ------------------------------------------------------------
+
 infid_map = 1.0 - fid_map
 infid_map = np.maximum(infid_map, 1e-16)
 
@@ -186,9 +177,7 @@ plt.colorbar(label="log10(1 - fidelity)")
 plt.tight_layout()
 plt.show()
 
-# ------------------------------------------------------------
-# optional: leakage map
-# ------------------------------------------------------------
+
 plt.figure(figsize=(6.5, 5.2))
 plt.imshow(
     leak_map,
