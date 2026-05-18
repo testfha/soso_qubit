@@ -1,0 +1,143 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+Notebook[{
+Cell["ClearAll[\"Global`*\"];
+
+params = {g1, g2, g3, J12, J23, theta1, theta2, phi1, phi2, n1, n2, eps, dJ};
+
+$Assumptions =
+  Element[params, Reals] &&
+  g1 > g2 > g3 > 0 &&
+  0 <= n1 <= 1 &&
+  0 <= n2 <= 1;
+
+id = IdentityMatrix[2];
+svec = PauliMatrix[#]/2 & /@ Range[3];
+
+op[s_, k_, n_] := KroneckerProduct @@ ReplacePart[ConstantArray[id, n], k -> s];
+S[k_] := op[#, k, 3] & /@ svec;
+dot[a_, b_] := Sum[a[[i]].b[[i]], {i, 3}];
+
+Sztot = Sum[op[svec[[3]], k, 3], {k, 3}];
+nAxis[n_, phi_] := {n Sin[phi], n Cos[phi], Sqrt[1 - n^2]};
+rotSpin[Sv_, n_, phi_, theta_] := RotationMatrix[theta, nAxis[n, phi]].Sv;
+
+Hso[J12_, J23_, theta1_, theta2_] :=
+  {g1, g2, g3}.Table[op[svec[[3]], k, 3], {k, 3}] +
+  J12 dot[S[1], rotSpin[S[2], n1, phi1, theta1]] +
+  J23 dot[S[2], rotSpin[S[3], n2, phi2, theta2]];
+
+$SOSOSBReady = False;
+
+ResetSOSOSB[] := ($SOSOSBReady = False);", "Input"],
+
+Cell["SetupSOSOSB[] := If[TrueQ[$SOSOSBReady],
+  Null,
+  dim = 8;
+  basis = IdentityMatrix[dim];
+
+  Hiso[J12_, J23_] :=
+    Sum[{g1, g2, g3}[[i]] S[i][[3]], {i, 3}] +
+    J12 dot[S[1], S[2]] +
+    J23 dot[S[2], S[3]];
+
+  mzVals = FullSimplify@Table[basis[[All, k]].Sztot.basis[[All, k]], {k, dim}];
+  mMinusIdx = Flatten @ Position[mzVals, -1/2];
+  Pminus = basis[[All, mMinusIdx]];
+
+  Hminus[J_] := FullSimplify[ConjugateTranspose[Pminus].Hiso[J, 0].Pminus];
+  evalsMinus = FullSimplify[Eigenvalues[Hminus[J12]]];
+
+  crossingEq =
+    FullSimplify[
+      Discriminant[CharacteristicPolynomial[Hminus[J12], x], x] == 0
+    ];
+  idleRoots = FullSimplify[J12 /. Solve[crossingEq, J12]];
+  Jidle = First[idleRoots] // FullSimplify;
+
+  Hidle = FullSimplify[Hiso[Jidle, 0]];
+  {evals0, vecs0raw} = Eigensystem[Hidle];
+
+  normR[v_] := FullSimplify[Sqrt[v.v], $Assumptions];
+  vecs0 = FullSimplify[(#/normR[#]) & /@ vecs0raw, $Assumptions];
+
+  EminusIdle =
+    FullSimplify[(Eigenvalues[Hminus[J12]] /. J12 -> Jidle), $Assumptions];
+  Elog = EminusIdle[[2]] // FullSimplify;
+  logIdx = Flatten @ Position[FullSimplify[evals0 - Elog], 0];
+  qIdx = Complement[Range[dim], logIdx];
+
+  U = vecs0;
+  toEig[M_] := FullSimplify[U.M.ConjugateTranspose[U]];
+  HidleEig = toEig[Hidle];
+
+  Pidx = logIdx;
+  Qidx = Complement[Range[dim], Pidx];
+
+  inP[i_] := MemberQ[Pidx, i];
+  Pblock[M_] := M[[Pidx, Pidx]];
+
+  BlockDiag[M_] := Module[{B = ConstantArray[0, Dimensions[M]]},
+    B[[Pidx, Pidx]] = M[[Pidx, Pidx]];
+    B[[Qidx, Qidx]] = M[[Qidx, Qidx]];
+    B
+  ];
+
+  BlockOff[M_] := M - BlockDiag[M];
+  Comm[A_, B_] := A.B - B.A;
+
+  SWGenerator[Voff_, energies_] :=
+    Table[
+      If[
+        Xor[inP[i], inP[j]],
+        Voff[[i, j]]/(energies[[i]] - energies[[j]]),
+        0
+      ],
+      {i, dim},
+      {j, dim}
+    ];
+
+  Traceless[M_] :=
+    Simplify[
+      M - (Tr[M]/Length[M]) IdentityMatrix[Length[M]]
+    ];
+
+  $SOSOSBReady = True;
+];", "Input"],
+
+Cell["SetupSOSOSB[];
+Hminus[J12] // MatrixForm", "Input"],
+
+Cell["SetupSOSOSB[];
+evalsMinus", "Input"],
+
+Cell["SetupSOSOSB[];
+Jidle", "Input"],
+
+Cell["SetupSOSOSB[];
+evals0", "Input"],
+
+Cell["SetupSOSOSB[];
+{Elog, logIdx, qIdx}", "Input"],
+
+Cell["SetupSOSOSB[];
+HidleEig // MatrixForm", "Input"],
+
+Cell["SetupSOSOSB[];
+
+Ht = toEig @ Hso[J12, J23, theta1, theta2];
+H0 = DiagonalMatrix @ Diagonal[Ht /. {theta1 -> 0, theta2 -> 0, J23 -> 0}];
+V = Ht - H0;
+energies = Diagonal[H0];
+Vdiag = BlockDiag[V];
+Voff = BlockOff[V];
+S1 = SWGenerator[Voff, energies];
+
+HeffSW = Pblock[H0 + Vdiag + 1/2 Comm[S1, Voff]];
+HeffSW // MatrixForm", "Input"]
+},
+StyleDefinitions -> "Default.nb"
+]
