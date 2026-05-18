@@ -6,6 +6,8 @@ from pathlib import Path
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.lines import Line2D
+from matplotlib.legend_handler import HandlerTuple
 from matplotlib.ticker import LogLocator, NullFormatter
 
 
@@ -61,19 +63,29 @@ def canonical_phase_peak_time_ns(delta: float) -> float:
     return 1000.0 * np.sqrt(3.0) / (2.0 * abs(delta))
 
 
+def trim_with_endpoint(data: np.ndarray, x_cut: float) -> np.ndarray:
+    left = data[data[:, 0] <= x_cut]
+    if len(left) == 0:
+        return data[:1].copy()
+    if np.isclose(left[-1, 0], x_cut):
+        return left
+    y_cut = np.interp(x_cut, data[:, 0], data[:, 1])
+    return np.vstack([left, [x_cut, y_cut]])
+
+
 def annotate_phase(ax: plt.Axes, x_ns: float, y: float, delta: float, dx: float, dy_scale: float) -> None:
     phi_over_pi = entangling_phase_over_pi(x_ns, delta)
+    phase_label = r"$\pi$" if np.isclose(phi_over_pi, 1.0, atol=5e-3) else rf"${phi_over_pi:.2f}\pi$"
     ax.plot([x_ns], [y], marker="o", ms=3.8, color="black", zorder=5)
     ax.annotate(
-        rf"${phi_over_pi:.2f}\pi$",
+        phase_label,
         xy=(x_ns, y),
         xytext=(x_ns + dx, y * dy_scale),
         textcoords="data",
-        fontsize=8.3,
+        fontsize=11.3,
         ha="left" if dx > 0 else "right",
         va="center",
-        arrowprops={"arrowstyle": "-", "lw": 0.7, "color": "black"},
-        bbox={"boxstyle": "round,pad=0.12", "fc": "white", "ec": "none", "alpha": 0.92},
+        arrowprops={"arrowstyle": "-", "lw": 0.75, "color": "black"},
     )
 
 
@@ -82,6 +94,9 @@ def main() -> None:
     parser.add_argument("--qs", required=True, type=Path)
     parser.add_argument("--uncorr", required=True, type=Path)
     parser.add_argument("--halfcorr", required=True, type=Path)
+    parser.add_argument("--leakage-qs", required=True, type=Path)
+    parser.add_argument("--leakage-uncorr", required=True, type=Path)
+    parser.add_argument("--leakage-halfcorr", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--delta", required=True, type=float, help="Signed Delta in inverse microseconds / MHz units used in Mathematica.")
     args = parser.parse_args()
@@ -90,24 +105,57 @@ def main() -> None:
 
     qs = load_xy(args.qs)
     uncorr = load_xy(args.uncorr)
+    leakage_qs = load_xy(args.leakage_qs)
+    leakage_uncorr = load_xy(args.leakage_uncorr)
     halfcorr = load_xy(args.halfcorr)
+    leakage_halfcorr = load_xy(args.leakage_halfcorr)
 
     x_cut = canonical_phase_peak_time_ns(args.delta)
-    qs = qs[qs[:, 0] <= x_cut]
-    uncorr = uncorr[uncorr[:, 0] <= x_cut]
-    halfcorr = halfcorr[halfcorr[:, 0] <= x_cut]
+    qs = trim_with_endpoint(qs, x_cut)
+    uncorr = trim_with_endpoint(uncorr, x_cut)
+    leakage_qs = trim_with_endpoint(leakage_qs, x_cut)
+    leakage_uncorr = trim_with_endpoint(leakage_uncorr, x_cut)
+    halfcorr = trim_with_endpoint(halfcorr, x_cut)
+    leakage_halfcorr = trim_with_endpoint(leakage_halfcorr, x_cut)
 
-    x_all = np.concatenate([qs[:, 0], uncorr[:, 0], halfcorr[:, 0]])
-    y_all = np.concatenate([qs[:, 1], uncorr[:, 1], halfcorr[:, 1]])
+    x_all = np.concatenate([qs[:, 0], uncorr[:, 0]])
+    y_all = np.concatenate([qs[:, 1], uncorr[:, 1]])
     positive = y_all[y_all > 0]
     ymin = 10 ** np.floor(np.log10(positive.min()))
     ymax = 10 ** np.ceil(np.log10(positive.max()))
 
+    leakage_y_all = np.concatenate([leakage_qs[:, 1], leakage_uncorr[:, 1]])
+    leakage_positive = leakage_y_all[leakage_y_all > 0]
+    y_all_combined = np.concatenate([positive, leakage_positive])
+    ymin = 10 ** np.floor(np.log10(y_all_combined.min()))
+    ymax = 10 ** np.ceil(np.log10(y_all_combined.max()))
+
     fig, ax = plt.subplots()
 
-    ax.plot(qs[:, 0], qs[:, 1], color="#1f4e79", lw=1.9, label="Quasistatic", solid_capstyle="round")
-    ax.plot(uncorr[:, 0], uncorr[:, 1], color="#c35a1e", lw=1.8, label=r"$1/f,\ c=0$", solid_capstyle="round")
-    ax.plot(halfcorr[:, 0], halfcorr[:, 1], color="#5b8f29", lw=1.8, label=r"$1/f,\ c=0.5$", solid_capstyle="round")
+    c_qs_inf = "#3f7fbe"
+    c_qs_leak = "#4fa66b"
+    c_1f_inf = "#d65a4a"
+    c_1f_leak = "#e39a3b"
+    ax.plot(qs[:, 0], qs[:, 1], color=c_qs_inf, lw=1.55, label="Quasistatic infidelity", solid_capstyle="round")
+    ax.plot(
+        leakage_qs[:, 0],
+        leakage_qs[:, 1],
+        color=c_qs_leak,
+        lw=1.55,
+        ls=(0, (0.35, 2.0)),
+        dash_capstyle="round",
+        label="Quasistatic leakage",
+    )
+    ax.plot(uncorr[:, 0], uncorr[:, 1], color=c_1f_inf, lw=1.45, label=r"$1/f$ infidelity", solid_capstyle="round")
+    ax.plot(
+        leakage_uncorr[:, 0],
+        leakage_uncorr[:, 1],
+        color=c_1f_leak,
+        lw=1.45,
+        ls=(0, (0.35, 2.0)),
+        dash_capstyle="round",
+        label=r"$1/f$ leakage",
+    )
 
     ax.set_yscale("log")
     ax.set_xlim(x_all.min(), x_all.max())
@@ -119,19 +167,47 @@ def main() -> None:
 
     ax.tick_params(which="both", top=True, right=True, pad=4)
     ax.set_xlabel(r"$t_g$ [ns]")
-    ax.set_ylabel("Gate infidelity")
+    ax.set_ylabel("")
 
-    ax.text(0.24, 0.86, r"$ZZ^\prime$ gate", transform=ax.transAxes, ha="left", va="top", fontsize=10)
+    ax.set_title(r"$ZZ^\prime$ gate", pad=6)
 
     x_left = x_all.min()
     x_right = x_all.max()
     y_left = np.interp(x_left, qs[:, 0], qs[:, 1])
     y_right = np.interp(x_right, qs[:, 0], qs[:, 1])
 
-    annotate_phase(ax, x_left, y_left, args.delta, dx=3.0, dy_scale=1.7)
-    annotate_phase(ax, x_right, y_right, args.delta, dx=-3.0, dy_scale=1.7)
+    annotate_phase(ax, x_left, y_left, args.delta, dx=11.0, dy_scale=1.82)
+    annotate_phase(ax, x_right, y_right, args.delta, dx=-11.5, dy_scale=1.24)
 
-    ax.legend(loc="lower right", bbox_to_anchor=(0.98, 0.02))
+    source_handles = [
+        (
+            Line2D([], [], color=c_qs_inf, lw=1.55),
+            Line2D([], [], color=c_qs_leak, lw=1.55, ls=(0, (0.35, 2.0)), dash_capstyle="round"),
+        ),
+        (
+            Line2D([], [], color=c_1f_inf, lw=1.45),
+            Line2D([], [], color=c_1f_leak, lw=1.45, ls=(0, (0.35, 2.0)), dash_capstyle="round"),
+        ),
+    ]
+    metric_handles = [
+        Line2D([], [], color="black", lw=1.55, label="Infidelity"),
+        Line2D([], [], color="black", lw=1.55, ls=(0, (0.35, 2.0)), label="Leakage", dash_capstyle="round"),
+    ]
+    leg_left = ax.legend(
+        handles=source_handles,
+        labels=["Quasistatic", r"$1/f$"],
+        loc="lower left",
+        bbox_to_anchor=(0.02, 0.02),
+        handlelength=2.6,
+        handler_map={tuple: HandlerTuple(ndivide=None, pad=0.7)},
+    )
+    ax.add_artist(leg_left)
+    ax.legend(
+        handles=metric_handles,
+        loc="lower right",
+        bbox_to_anchor=(0.82, 0.02),
+        handlelength=2.6,
+    )
 
     fig.tight_layout(pad=0.28)
     args.output.parent.mkdir(parents=True, exist_ok=True)
