@@ -451,7 +451,7 @@ def draw_qubit_schematic(ax):
 
 
 def draw_full_spectrum(ax):
-    """Panel showing all 8 eigenlevels, with the m_z=-1/2 qubit subspace highlighted."""
+    """All 8 eigenlevels; m_z=-1/2 qubit subspace highlighted in colour."""
     g1, g2, g3 = 53.0, 74.0, 47.0
     j_id = j_idle(g1, g2, g3)
     j_vals = np.linspace(0, 1.6 * j_id, 400)
@@ -461,56 +461,45 @@ def draw_full_spectrum(ax):
     half_labels = [r"$|0\rangle$", r"$|1\rangle$", "leak"]
     gray = "#BBBBBB"
 
-    mz_texts = {
-        -1.5: r"$m_z\!=\!-\frac{3}{2}$",
-        -0.5: r"$m_z\!=\!-\frac{1}{2}$",
-         0.5: r"$m_z\!=\!+\frac{1}{2}$",
-         1.5: r"$m_z\!=\!+\frac{3}{2}$",
-    }
-
-    # Shaded band for the m_z=-1/2 qubit subspace (draw first, behind everything)
+    # Shaded band for m_z=-1/2 qubit subspace
     y_lo = spec[:, mz_half_cols].min() - 3
     y_hi = spec[:, mz_half_cols].max() + 3
     ax.axhspan(y_lo, y_hi, color=PALETTE["sage"], alpha=0.10, zorder=0, lw=0)
 
-    # Gray lines for the five non-qubit levels
+    # Gray lines for the five non-qubit levels (single legend entry)
+    first_gray = True
     for i in range(8):
         if i not in mz_half_cols:
-            ax.plot(j_vals, spec[:, i], lw=0.9, color=gray, alpha=0.85, zorder=1)
+            lbl = r"other $m_z$" if first_gray else "_nolegend_"
+            ax.plot(j_vals, spec[:, i], lw=0.9, color=gray, alpha=0.85,
+                    zorder=1, label=lbl)
+            first_gray = False
 
-    # Coloured bold lines for the three m_z=-1/2 qubit levels
+    # Coloured bold lines for the three m_z=-1/2 levels
     for col, color, lbl in zip(mz_half_cols, half_colors, half_labels):
         ax.plot(j_vals, spec[:, col], lw=1.5, color=color, label=lbl, zorder=2)
 
-    # m_z sector labels at the right edge of each group
-    x_ann = j_vals[-1] * 0.97
-    for mz_val in sorted(set(mz_labels)):
-        cols_in = np.where(np.isclose(mz_labels, mz_val))[0]
-        y_c = float(np.mean(spec[-1, cols_in]))
-        is_qubit = np.isclose(mz_val, -0.5)
-        color = PALETTE["sage"] if is_qubit else gray
-        ax.text(
-            x_ann, y_c,
-            mz_texts[mz_val],
-            fontsize=QUBIT_LABEL_FS - 1.5,
-            color=color,
-            ha="right",
-            va="center",
-            clip_on=True,
-            zorder=5,
-        )
+    # Single text label for the shaded band, placed just above its top edge
+    ax.text(
+        j_vals[-1] * 0.97, y_hi + 2,
+        r"$m_z\!=\!-\frac{1}{2}$",
+        ha="right", va="bottom",
+        fontsize=QUBIT_LABEL_FS - 1.0,
+        color=PALETTE["sage"],
+        zorder=5,
+    )
 
     ax.set_xlabel(r"$J_{12}$ (MHz)")
     ax.set_ylabel(r"$E$ (MHz)")
     ax.set_title(r"All 8 levels, $J_{23}=0$", fontsize=QUBIT_LABEL_FS, pad=4)
     ax.set_xlim(0, j_vals[-1])
-    ax.set_ylim(-5, spec.max() + 8)
+    ax.set_ylim(-5, spec.max() + 12)
     ax.tick_params(labelsize=QUBIT_LABEL_FS)
     ax.xaxis.label.set_size(QUBIT_LABEL_FS)
     ax.yaxis.label.set_size(QUBIT_LABEL_FS)
     ax.legend(
-        loc="center left",
-        bbox_to_anchor=(0.02, 0.42),
+        loc="upper left",
+        bbox_to_anchor=(0.02, 0.62),
         fontsize=QUBIT_LABEL_FS - 0.5,
         handlelength=1.0,
     )
@@ -661,25 +650,29 @@ def draw_readout(ax):
 def main():
     prx_style()
 
-    # Widen the figure to accommodate the new 8-level spectrum panel.
-    fig = plt.figure(figsize=(6.8, 2.55), constrained_layout=False)
+    # Layout (3 rows × 7 cols):
+    #   Row 0 (top-left):  qubit schematic  │ (b) all-8-levels spectrum
+    #   Row 1 (mid-left):  qubit schematic  │ (c) m_z=-1/2 zoom spectrum
+    #   Row 2 (bottom):    (d) init  │ (e) ctrl  │ gap  │ (f) readout
+    # The qubit schematic spans rows 0-1.
+    fig = plt.figure(figsize=(6.5, 2.85), constrained_layout=False)
 
-    # 11-column grid: qubit(0-3) | full-spec(4-6) | zoom-spec(7-10)
-    #                 init(0-3)  | ctrl(4-7)      | readout(7-10)
     gs = GridSpec(
-        2, 11,
+        3, 7,
         figure=fig,
-        height_ratios=[0.52, 0.34],
-        wspace=0.95,
-        hspace=0.78,
+        height_ratios=[0.28, 0.28, 0.34],
+        width_ratios=[1, 1, 1, 1, 0.18, 1.1, 1.1],
+        wspace=0.88,
+        hspace=0.72,
     )
 
-    ax_qubit    = fig.add_subplot(gs[0, 0:4])
-    ax_spec_all = fig.add_subplot(gs[0, 4:7])   # NEW: all 8 levels
-    ax_spec     = fig.add_subplot(gs[0, 7:11])  # existing: m_z=-1/2 zoom
-    ax_init     = fig.add_subplot(gs[1, 0:4])
-    ax_ctrl     = fig.add_subplot(gs[1, 4:7])
-    ax_read     = fig.add_subplot(gs[1, 7:11])
+    ax_qubit    = fig.add_subplot(gs[0:2, 0:4])  # spans top two rows, left 4 cols
+    ax_spec_all = fig.add_subplot(gs[0, 5:7])    # (b) all 8 levels
+    ax_spec     = fig.add_subplot(gs[1, 5:7])    # (c) m_z=-1/2 zoom
+
+    ax_init = fig.add_subplot(gs[2, 0:2])
+    ax_ctrl = fig.add_subplot(gs[2, 2:4])        # col 4 is the gap spacer
+    ax_read = fig.add_subplot(gs[2, 5:7])
 
     draw_qubit_schematic(ax_qubit)
     draw_full_spectrum(ax_spec_all)
@@ -689,11 +682,12 @@ def main():
     draw_readout(ax_read)
 
     panel_label(ax_qubit,    "(a)", x=-0.02, y=1.01)
-    panel_label(ax_spec_all, "(b)", x=-0.12, y=1.05)
-    panel_label(ax_spec,     "(c)", x=-0.12, y=1.05)
-    panel_label(ax_init,     "(d)", x=-0.07, y=1.02)
-    panel_label(ax_ctrl,     "(e)", x=-0.35, y=1.02)
-    panel_label(ax_read,     "(f)", x=-0.07, y=1.02)
+    panel_label(ax_spec_all, "(b)", x=-0.22, y=1.05)
+    panel_label(ax_spec,     "(c)", x=-0.22, y=1.05)
+    panel_label(ax_init,     "(d)", x=-0.12, y=1.05)
+    # ctrl uses set_aspect("equal") → dead space on left; x≈0.20 sits in that dead space
+    panel_label(ax_ctrl,     "(e)", x=0.20, y=1.05)
+    panel_label(ax_read,     "(f)", x=-0.22, y=1.05)
 
     out_dir = Path(__file__).resolve().parent
     fig.savefig(out_dir / "qubit_passport.pdf", bbox_inches="tight")
