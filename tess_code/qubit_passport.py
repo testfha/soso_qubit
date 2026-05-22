@@ -214,6 +214,69 @@ def compute_spectrum(j_vals, g1, g2, g3):
     return spectrum - np.min(spectrum)
 
 
+def compute_full_spectrum(j_vals, g1, g2, g3):
+    """All 8 eigenvalues vs J12 (J23=0), tracked independently per m_z sector.
+
+    Returns
+    -------
+    spectrum : ndarray, shape (len(j_vals), 8)
+        Energies normalised so the global minimum is zero.
+    mz_labels : ndarray, shape (8,)
+        The m_z value for each column.
+    mz_half_cols : ndarray
+        Column indices belonging to the m_z = -1/2 sector,
+        sorted by energy at J12 = 0 (|0>, |1>, leak order).
+    """
+    sz_diag = np.real(np.diag(
+        0.5 * (kron3(SIGMA_Z, ID2, ID2) + kron3(ID2, SIGMA_Z, ID2) + kron3(ID2, ID2, SIGMA_Z))
+    ))
+    sector_idx = {mz: np.where(np.isclose(sz_diag, mz))[0] for mz in [-1.5, -0.5, 0.5, 1.5]}
+
+    n_pts = len(j_vals)
+    spectrum = np.zeros((n_pts, 8))
+    mz_labels = np.zeros(8)
+
+    col = 0
+    col_slices = {}
+    for mz in sorted(sector_idx):
+        k = len(sector_idx[mz])
+        col_slices[mz] = slice(col, col + k)
+        mz_labels[col: col + k] = mz
+        col += k
+
+    for mz in sorted(sector_idx):
+        idx = sector_idx[mz]
+        slc = col_slices[mz]
+        k = len(idx)
+        prev_vecs = None
+
+        for step, j12 in enumerate(j_vals):
+            ham = hamiltonian(j12, 0.0, g1, g2, g3)
+            sub = ham[np.ix_(idx, idx)]
+            evals, evecs = np.linalg.eigh(sub)
+            evals = np.real(evals)
+
+            if prev_vecs is None:
+                order = list(np.argsort(evals))
+            elif k == 1:
+                order = [0]
+            else:
+                overlaps = np.abs(prev_vecs.conj().T @ evecs) ** 2
+                order = list(
+                    max(
+                        permutations(range(k)),
+                        key=lambda p: sum(overlaps[i, p[i]] for i in range(k)),
+                    )
+                )
+
+            spectrum[step, slc] = evals[order]
+            prev_vecs = evecs[:, order]
+
+    spectrum -= spectrum.min()
+    mz_half_cols = np.where(np.isclose(mz_labels, -0.5))[0]
+    return spectrum, mz_labels, mz_half_cols
+
+
 def panel_label(ax, label, x=-0.08, y=1.03):
     ax.text(
         x,
@@ -387,6 +450,72 @@ def draw_qubit_schematic(ax):
     ax.axis("off")
 
 
+def draw_full_spectrum(ax):
+    """Panel showing all 8 eigenlevels, with the m_z=-1/2 qubit subspace highlighted."""
+    g1, g2, g3 = 53.0, 74.0, 47.0
+    j_id = j_idle(g1, g2, g3)
+    j_vals = np.linspace(0, 1.6 * j_id, 400)
+    spec, mz_labels, mz_half_cols = compute_full_spectrum(j_vals, g1, g2, g3)
+
+    half_colors = [PALETTE["sage"], PALETTE["plum"], PALETTE["amber"]]
+    half_labels = [r"$|0\rangle$", r"$|1\rangle$", "leak"]
+    gray = "#BBBBBB"
+
+    mz_texts = {
+        -1.5: r"$m_z\!=\!-\frac{3}{2}$",
+        -0.5: r"$m_z\!=\!-\frac{1}{2}$",
+         0.5: r"$m_z\!=\!+\frac{1}{2}$",
+         1.5: r"$m_z\!=\!+\frac{3}{2}$",
+    }
+
+    # Shaded band for the m_z=-1/2 qubit subspace (draw first, behind everything)
+    y_lo = spec[:, mz_half_cols].min() - 3
+    y_hi = spec[:, mz_half_cols].max() + 3
+    ax.axhspan(y_lo, y_hi, color=PALETTE["sage"], alpha=0.10, zorder=0, lw=0)
+
+    # Gray lines for the five non-qubit levels
+    for i in range(8):
+        if i not in mz_half_cols:
+            ax.plot(j_vals, spec[:, i], lw=0.9, color=gray, alpha=0.85, zorder=1)
+
+    # Coloured bold lines for the three m_z=-1/2 qubit levels
+    for col, color, lbl in zip(mz_half_cols, half_colors, half_labels):
+        ax.plot(j_vals, spec[:, col], lw=1.5, color=color, label=lbl, zorder=2)
+
+    # m_z sector labels at the right edge of each group
+    x_ann = j_vals[-1] * 0.97
+    for mz_val in sorted(set(mz_labels)):
+        cols_in = np.where(np.isclose(mz_labels, mz_val))[0]
+        y_c = float(np.mean(spec[-1, cols_in]))
+        is_qubit = np.isclose(mz_val, -0.5)
+        color = PALETTE["sage"] if is_qubit else gray
+        ax.text(
+            x_ann, y_c,
+            mz_texts[mz_val],
+            fontsize=QUBIT_LABEL_FS - 1.5,
+            color=color,
+            ha="right",
+            va="center",
+            clip_on=True,
+            zorder=5,
+        )
+
+    ax.set_xlabel(r"$J_{12}$ (MHz)")
+    ax.set_ylabel(r"$E$ (MHz)")
+    ax.set_title(r"All 8 levels, $J_{23}=0$", fontsize=QUBIT_LABEL_FS, pad=4)
+    ax.set_xlim(0, j_vals[-1])
+    ax.set_ylim(-5, spec.max() + 8)
+    ax.tick_params(labelsize=QUBIT_LABEL_FS)
+    ax.xaxis.label.set_size(QUBIT_LABEL_FS)
+    ax.yaxis.label.set_size(QUBIT_LABEL_FS)
+    ax.legend(
+        loc="center left",
+        bbox_to_anchor=(0.02, 0.42),
+        fontsize=QUBIT_LABEL_FS - 0.5,
+        handlelength=1.0,
+    )
+
+
 def draw_spectrum(ax):
     g1, g2, g3 = 53.0, 74.0, 47.0
     j_id = j_idle(g1, g2, g3)
@@ -532,29 +661,39 @@ def draw_readout(ax):
 def main():
     prx_style()
 
-    fig = plt.figure(constrained_layout=False)
-    gs = GridSpec(2, 8, figure=fig, height_ratios=[0.52, 0.34], wspace=1.00, hspace=0.78)
+    # Widen the figure to accommodate the new 8-level spectrum panel.
+    fig = plt.figure(figsize=(6.8, 2.55), constrained_layout=False)
 
-    ax_qubit = fig.add_subplot(gs[0, 0:5])
-    ax_spec = fig.add_subplot(gs[0, 5:8])
-    ax_init = fig.add_subplot(gs[1, 0:3])
-    ax_ctrl = fig.add_subplot(gs[1, 3:5])
-    ax_read = fig.add_subplot(gs[1, 5:8])
+    # 11-column grid: qubit(0-3) | full-spec(4-6) | zoom-spec(7-10)
+    #                 init(0-3)  | ctrl(4-7)      | readout(7-10)
+    gs = GridSpec(
+        2, 11,
+        figure=fig,
+        height_ratios=[0.52, 0.34],
+        wspace=0.95,
+        hspace=0.78,
+    )
+
+    ax_qubit    = fig.add_subplot(gs[0, 0:4])
+    ax_spec_all = fig.add_subplot(gs[0, 4:7])   # NEW: all 8 levels
+    ax_spec     = fig.add_subplot(gs[0, 7:11])  # existing: m_z=-1/2 zoom
+    ax_init     = fig.add_subplot(gs[1, 0:4])
+    ax_ctrl     = fig.add_subplot(gs[1, 4:7])
+    ax_read     = fig.add_subplot(gs[1, 7:11])
 
     draw_qubit_schematic(ax_qubit)
+    draw_full_spectrum(ax_spec_all)
     draw_spectrum(ax_spec)
     draw_initialization(ax_init)
     draw_control(ax_ctrl)
     draw_readout(ax_read)
 
-    panel_label(ax_qubit, "(a)", x=-0.02, y=1.01)
-    panel_label(ax_spec, "(b)", x=-0.12, y=1.05)
-    panel_label(ax_init, "(c)", x=-0.07, y=1.02)
-    panel_label(ax_ctrl, "(d)", x=-0.42, y=1.02)
-    panel_label(ax_read, "(e)", x=-0.07, y=1.02)
-
-    spec_pos = ax_spec.get_position()
-    ax_spec.set_position([spec_pos.x0, spec_pos.y0, spec_pos.width + 0.02, spec_pos.height])
+    panel_label(ax_qubit,    "(a)", x=-0.02, y=1.01)
+    panel_label(ax_spec_all, "(b)", x=-0.12, y=1.05)
+    panel_label(ax_spec,     "(c)", x=-0.12, y=1.05)
+    panel_label(ax_init,     "(d)", x=-0.07, y=1.02)
+    panel_label(ax_ctrl,     "(e)", x=-0.35, y=1.02)
+    panel_label(ax_read,     "(f)", x=-0.07, y=1.02)
 
     out_dir = Path(__file__).resolve().parent
     fig.savefig(out_dir / "qubit_passport.pdf", bbox_inches="tight")
