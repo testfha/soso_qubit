@@ -650,29 +650,33 @@ def draw_readout(ax):
 def main():
     prx_style()
 
-    # Layout (3 rows × 7 cols):
-    #   Row 0 (top-left):  qubit schematic  │ (b) all-8-levels spectrum
-    #   Row 1 (mid-left):  qubit schematic  │ (c) m_z=-1/2 zoom spectrum
-    #   Row 2 (bottom):    (d) init  │ (e) ctrl  │ gap  │ (f) readout
-    # The qubit schematic spans rows 0-1.
-    fig = plt.figure(figsize=(6.5, 2.85), constrained_layout=False)
+    # Layout (3 rows × 6 cols):
+    #   Rows 0-1, cols 0:4 → qubit schematic  (wide, spans both spectrum rows)
+    #   Row  0,   cols 4:6 → (b) all-8-levels spectrum
+    #   Row  1,   cols 4:6 → (c) m_z=-1/2 zoom
+    #   Row  2,   cols 0:2 → (d) init
+    #   Row  2,   cols 2:4 → (e) ctrl   ← NARROW cols so equal-aspect square fills them
+    #   Row  2,   cols 4:6 → (f) readout
+    #
+    # Narrow cols 2-3 (ratio 0.28 each) keep ctrl almost square → minimal dead space.
+    # Bottom row height_ratio 0.24 < spectrum rows 0.30 → compact.
+    fig = plt.figure(figsize=(6.0, 2.55), constrained_layout=False)
 
     gs = GridSpec(
-        3, 7,
+        3, 6,
         figure=fig,
-        height_ratios=[0.28, 0.28, 0.34],
-        width_ratios=[1, 1, 1, 1, 0.18, 1.1, 1.1],
-        wspace=0.88,
-        hspace=0.72,
+        height_ratios=[0.30, 0.30, 0.24],
+        width_ratios=[1.1, 1.1, 0.28, 0.28, 1.1, 1.1],
+        wspace=0.70,
+        hspace=0.65,
     )
 
-    ax_qubit    = fig.add_subplot(gs[0:2, 0:4])  # spans top two rows, left 4 cols
-    ax_spec_all = fig.add_subplot(gs[0, 5:7])    # (b) all 8 levels
-    ax_spec     = fig.add_subplot(gs[1, 5:7])    # (c) m_z=-1/2 zoom
-
-    ax_init = fig.add_subplot(gs[2, 0:2])
-    ax_ctrl = fig.add_subplot(gs[2, 2:4])        # col 4 is the gap spacer
-    ax_read = fig.add_subplot(gs[2, 5:7])
+    ax_qubit    = fig.add_subplot(gs[0:2, 0:4])
+    ax_spec_all = fig.add_subplot(gs[0, 4:6])
+    ax_spec     = fig.add_subplot(gs[1, 4:6])
+    ax_init     = fig.add_subplot(gs[2, 0:2])
+    ax_ctrl     = fig.add_subplot(gs[2, 2:4])
+    ax_read     = fig.add_subplot(gs[2, 4:6])
 
     draw_qubit_schematic(ax_qubit)
     draw_full_spectrum(ax_spec_all)
@@ -685,8 +689,8 @@ def main():
     panel_label(ax_spec_all, "(b)", x=-0.22, y=1.05)
     panel_label(ax_spec,     "(c)", x=-0.22, y=1.05)
     panel_label(ax_init,     "(d)", x=-0.12, y=1.05)
-    # ctrl uses set_aspect("equal") → dead space on left; x≈0.20 sits in that dead space
-    panel_label(ax_ctrl,     "(e)", x=0.20, y=1.05)
+    # ctrl: equal-aspect square ≈ fills the narrow cols; x=0.13 lands in left dead-space
+    panel_label(ax_ctrl,     "(e)", x=0.13, y=1.05)
     panel_label(ax_read,     "(f)", x=-0.22, y=1.05)
 
     out_dir = Path(__file__).resolve().parent
